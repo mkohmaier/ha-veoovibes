@@ -1,0 +1,12 @@
+{
+  "domain": "veoovibes",
+  "name": "Veoovibes Multiroom Audio",
+  "version": "1.0.0",
+  "documentation": "local",
+  "issue_tracker": "local",
+  "codeowners": ["@your-github"],
+  "iot_class": "local_polling",
+  "loggers": ["custom_components.veoovibes"],
+  "requirements": [],
+  "config_flow": true
+}

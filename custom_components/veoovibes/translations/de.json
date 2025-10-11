@@ -1,0 +1,20 @@
+{
+  "title": "Veoovibes Multiroom Audio",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Veoovibes verbinden",
+        "description": "Gib die Basis-URL (z. B. http://<IP>) und deinen API-Key ein.",
+        "data": {
+          "base_url": "Basis-URL",
+          "token": "API-Key",
+          "verify_ssl": "SSL-Zertifikat prüfen"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung fehlgeschlagen",
+      "no_rooms": "Keine Räume gefunden"
+    }
+  }
+}

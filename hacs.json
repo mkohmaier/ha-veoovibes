@@ -1,0 +1,8 @@
+{
+  "name": "Veoovibes",
+  "render_readme": true,
+  "homeassistant": "2023.12.0",
+  "domains": [
+    "veoovibes"
+  ]
+}
