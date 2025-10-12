@@ -40,6 +40,16 @@ class VeoovibesClient:
             return data.get("result")
         except Exception as exc:
             raise VeoovibesApiError(f"{cmd} error: {exc}") from exc
+    
+    async def room_repeat(self, room_id: int | str):
+        """Repeat als Toggle."""
+        return await self._get_cmd("room_repeat", {"room": room_id})
+
+    async def music_room(self, room_id: int | str, group: int, prog: int):
+        """Quelle (group/prog) starten."""
+        return await self._get_cmd(
+            "music_room", {"room": room_id, "group": int(group), "prog": int(prog)}
+        )
 
     @staticmethod
     def _dict_result_to_list(d: Any) -> List[dict]:
