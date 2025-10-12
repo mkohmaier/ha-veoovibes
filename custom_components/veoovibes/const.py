@@ -6,7 +6,7 @@ CONF_VERIFY_SSL = "verify_ssl"
 
 PLATFORMS = ["media_player"]
 
-DEFAULT_VERIFY_SSL = False
+DEFAULT_VERIFY_SSL = True
 DEFAULT_SCAN_INTERVAL = 10  # seconds
 
 CONF_SOURCE_MAP = "source_map"
