@@ -1,11 +1,11 @@
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, List
 import logging
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
 )
-from homeassistant.components.media_player.const import MediaPlayerState
+from homeassistant.components.media_player.const import MediaPlayerState, RepeatMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -15,12 +15,15 @@ from .api import VeoovibesClient, VeoovibesApiError
 _LOGGER = logging.getLogger(__name__)
 
 # Features: Play/Stop, Pause→Stop (für Tiles), Next/Prev, Volume, Turn On/Off (Power-Icon)
+# NEU: Repeat & Select Source
 FEATURES = (
     MediaPlayerEntityFeature.PLAY
     | MediaPlayerEntityFeature.PAUSE          # wir mappen Pause auf Stop (Play/Off UX)
     | MediaPlayerEntityFeature.STOP
     | MediaPlayerEntityFeature.NEXT_TRACK
     | MediaPlayerEntityFeature.PREVIOUS_TRACK
+    | MediaPlayerEntityFeature.REPEAT_SET     # NEU
+    | MediaPlayerEntityFeature.SELECT_SOURCE  # NEU
     | MediaPlayerEntityFeature.VOLUME_SET
     | MediaPlayerEntityFeature.TURN_ON
     | MediaPlayerEntityFeature.TURN_OFF
@@ -56,6 +59,7 @@ class VeoRoomEntity(CoordinatorEntity, MediaPlayerEntity):
     def __init__(self, coordinator, client: VeoovibesClient, entry: ConfigEntry, room_id: str, name: str):
         super().__init__(coordinator)
         self._client = client
+        self._entry = entry  # NEU: für Zugriff auf global_sources
         self._room_id = room_id
         self._attr_name = name
         self._attr_unique_id = f"{entry.entry_id}_room_{room_id}"
@@ -70,6 +74,11 @@ class VeoRoomEntity(CoordinatorEntity, MediaPlayerEntity):
     # ----- helpers -----
     def _st(self) -> dict:
         return self.coordinator.data[KEY_STATE].get(self._room_id, {}) or {}
+
+    def _global_sources(self) -> list[dict]:
+        # Wird in __init__.py unter hass.data[DOMAIN][entry_id]["global_sources"] gepflegt
+        data = self.hass.data[DOMAIN][self._entry.entry_id]
+        return data.get("global_sources", []) or []
 
     # ----- state mapping -----
     @property
@@ -108,6 +117,51 @@ class VeoRoomEntity(CoordinatorEntity, MediaPlayerEntity):
     @property
     def media_image_url(self):
         return self._st().get("cover")
+
+    # ----- Repeat (Toggle) -----
+    @property
+    def repeat(self) -> Optional[str]:
+        st = self._st()
+        rep = st.get("repeat")
+        if isinstance(rep, (bool, int)):
+            return RepeatMode.ALL if bool(rep) else RepeatMode.OFF
+        if isinstance(rep, str):
+            rep_l = rep.lower()
+            if rep_l in ("all", "one", "true", "1"):
+                return RepeatMode.ALL
+            if rep_l in ("off", "false", "0"):
+                return RepeatMode.OFF
+        return RepeatMode.OFF
+
+    async def async_set_repeat(self, repeat: str) -> None:
+        desired_on = repeat != RepeatMode.OFF
+        current_on = self.repeat != RepeatMode.OFF
+        if desired_on != current_on:
+            try:
+                # Toggle per API
+                await self._client.room_repeat(self._room_id)
+            except VeoovibesApiError as exc:
+                _LOGGER.debug("repeat toggle failed for room %s: %s", self._room_id, exc)
+        await self.coordinator.async_request_refresh()
+
+    # ----- Source-Auswahl (global) -----
+    @property
+    def source_list(self) -> Optional[List[str]]:
+        srcs = self._global_sources()
+        return [s["name"] for s in srcs] if srcs else None
+
+    async def async_select_source(self, source: str) -> None:
+        srcs = self._global_sources()
+        match = next((s for s in srcs if s.get("name") == source), None)
+        if not match:
+            _LOGGER.warning("select_source: '%s' not in global sources", source)
+            return
+        try:
+            await self._client.music_room(self._room_id, match["group"], match["prog"])
+        except VeoovibesApiError as exc:
+            _LOGGER.debug("select_source failed for room %s: %s", self._room_id, exc)
+        finally:
+            await self.coordinator.async_request_refresh()
 
     # ----- core media controls -----
     async def async_media_play(self):
