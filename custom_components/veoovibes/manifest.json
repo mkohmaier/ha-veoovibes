@@ -1,7 +1,7 @@
 {
   "domain": "veoovibes",
   "name": "Veoovibes Multiroom Audio",
-  "version": "1.1.14",
+  "version": "1.1.15",
   "documentation": "local",
   "issue_tracker": "local",
   "codeowners": ["@mkohmaier"],
