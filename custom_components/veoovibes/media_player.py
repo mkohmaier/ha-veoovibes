@@ -59,7 +59,7 @@ class VeoRoomEntity(CoordinatorEntity, MediaPlayerEntity):
     def __init__(self, coordinator, client: VeoovibesClient, entry: ConfigEntry, room_id: str, name: str):
         super().__init__(coordinator)
         self._client = client
-        self._entry = entry  # NEU: für Zugriff auf global_sources
+        self._entry = entry  # für Zugriff auf globale Quellen
         self._room_id = room_id
         self._attr_name = name
         self._attr_unique_id = f"{entry.entry_id}_room_{room_id}"
