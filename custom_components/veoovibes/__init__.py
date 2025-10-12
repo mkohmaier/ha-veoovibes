@@ -3,14 +3,11 @@ from datetime import timedelta
 import logging
 import json
 import yaml
-from pathlib import Path
-
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-
 from .const import (
     DOMAIN,
     CONF_BASE_URL,
@@ -20,7 +17,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     KEY_ROOMS,
     KEY_STATE,
-    CONF_SOURCE_MAP,  # NEU: Schlüssel für Options-/Datei-Konfiguration
+    CONF_SOURCE_MAP,  # <— NEU
 )
 from .api import VeoovibesClient, VeoovibesApiError
 
@@ -28,12 +25,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _parse_global_sources(raw: str) -> list[dict]:
-    """YAML/JSON parsen:
+    """Erwartet YAML oder JSON der Form:
     sources:
       - name: "FM4"
         group: 1
         prog: 3
-    -> Liste von Dicts mit name/group/prog.
+    Gibt eine Liste von Dicts mit name/group/prog zurück.
     """
     if not raw or not str(raw).strip():
         return []
@@ -48,38 +45,18 @@ def _parse_global_sources(raw: str) -> list[dict]:
             return []
     if not isinstance(data, dict):
         return []
+
     out: list[dict] = []
     for s in (data.get("sources") or []):
         try:
-            out.append(
-                {"name": str(s["name"]), "group": int(s["group"]), "prog": int(s["prog"])}
-            )
+            out.append({
+                "name": str(s["name"]),
+                "group": int(s["group"]),
+                "prog": int(s["prog"]),
+            })
         except Exception:
             continue
     return out
-
-
-def _load_sources_from_file(hass) -> list[dict]:
-    """Optionaler Fallback: /config/veoovibes_sources.yaml laden."""
-    try:
-        path = Path(hass.config.path("veoovibes_sources.yaml"))
-        if not path.exists():
-            return []
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return []
-        out: list[dict] = []
-        for s in (data.get("sources") or []):
-            try:
-                out.append(
-                    {"name": str(s["name"]), "group": int(s["group"]), "prog": int(s["prog"])}
-                )
-            except Exception:
-                continue
-        return out
-    except Exception as exc:
-        _LOGGER.warning("veoovibes: could not load veoovibes_sources.yaml: %s", exc)
-        return []
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
@@ -98,7 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             if rid is None:
                 continue
             try:
-                # in Deinem Client heißt der Status-Endpunkt get_room_status
+                # In deinem Client heißt das get_room_status
                 state_by_room[str(rid)] = await client.get_room_status(rid)
             except VeoovibesApiError as exc:
                 _LOGGER.debug("room_player_status failed for %s: %s", rid, exc)
@@ -114,15 +91,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     await coordinator.async_config_entry_first_refresh()
 
-    # Globale Quellen: erst Optionswert, sonst Datei-Fallback
-    global_sources = _parse_global_sources(entry.options.get(CONF_SOURCE_MAP, "")) or _load_sources_from_file(hass)
-
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
         "coordinator": coordinator,
-        "global_sources": global_sources,                       # NEU
-        "unsub_options": entry.add_update_listener(options_updated),  # NEU
+        # NEU: globale Quellenliste aus den Optionen parsen
+        "global_sources": _parse_global_sources(entry.options.get(CONF_SOURCE_MAP, "")),
+        # NEU: Options-Listener registrieren
+        "unsub_options": entry.add_update_listener(options_updated),
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, [Platform.MEDIA_PLAYER])
@@ -130,13 +106,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 
 async def options_updated(hass: HomeAssistant, entry: ConfigEntry):
-    """Wenn Optionen geändert wurden: globale Quellen neu laden (mit Datei-Fallback)."""
+    """Wird aufgerufen, wenn die Options (z. B. source_map) geändert wurden."""
     data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if not data:
         return
-    data["global_sources"] = (
-        _parse_global_sources(entry.options.get(CONF_SOURCE_MAP, "")) or _load_sources_from_file(hass)
-    )
+    data["global_sources"] = _parse_global_sources(entry.options.get(CONF_SOURCE_MAP, ""))
     await data["coordinator"].async_request_refresh()
 
 
@@ -144,7 +118,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     unload_ok = await hass.config_entries.async_unload_platforms(entry, [Platform.MEDIA_PLAYER])
     if unload_ok:
         data = hass.data[DOMAIN].pop(entry.entry_id, None)
-        # Options-Listener deregistrieren, wenn vorhanden
+        # NEU: Options-Listener sauber deregistrieren, falls vorhanden
         if data and callable(data.get("unsub_options")):
             try:
                 data["unsub_options"]()
