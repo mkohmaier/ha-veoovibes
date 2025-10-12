@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Veoovibes verbinden",
-        "description": "Gib die Basis-URL (z. B. http://<IP>) und deinen API-Key ein.",
+        "description": "Gib die Basis-URL (z. B. http://IP_oder_Name) und deinen API-Key ein.",
         "data": {
           "base_url": "Basis-URL",
           "token": "API-Key",
