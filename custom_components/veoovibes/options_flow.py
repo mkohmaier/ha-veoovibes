@@ -1,11 +1,8 @@
 from __future__ import annotations
-
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
-
-# Kein Import aus .const, um Importfehler zu vermeiden
-CONF_SOURCE_MAP = "source_map"
+from .const import CONF_SOURCE_MAP
 
 EXAMPLE = (
     "sources:\n"
@@ -18,8 +15,7 @@ EXAMPLE = (
 )
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Options-Dialog: ein Textfeld für die globale Quellenliste (YAML/JSON)."""
-
+    """Options-Dialog für globale Quellenliste."""
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self.config_entry = config_entry
 
