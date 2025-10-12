@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Optional
+import logging
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
@@ -9,14 +10,20 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, KEY_ROOMS, KEY_STATE
-from .api import VeoovibesClient
+from .api import VeoovibesClient, VeoovibesApiError
 
+_LOGGER = logging.getLogger(__name__)
+
+# Features: Play/Stop, Pause→Stop (für Tiles), Next/Prev, Volume, Turn On/Off (Power-Icon)
 FEATURES = (
     MediaPlayerEntityFeature.PLAY
+    | MediaPlayerEntityFeature.PAUSE          # wir mappen Pause auf Stop (Play/Off UX)
     | MediaPlayerEntityFeature.STOP
     | MediaPlayerEntityFeature.NEXT_TRACK
     | MediaPlayerEntityFeature.PREVIOUS_TRACK
     | MediaPlayerEntityFeature.VOLUME_SET
+    | MediaPlayerEntityFeature.TURN_ON
+    | MediaPlayerEntityFeature.TURN_OFF
 )
 
 async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities):
@@ -39,7 +46,10 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities):
         entities.append(VeoRoomEntity(coordinator, client, entry, rid, name))
     async_add_entities(entities, True)
 
+
 class VeoRoomEntity(CoordinatorEntity, MediaPlayerEntity):
+    """One media_player per Veoovibes room."""
+
     _attr_should_poll = False
     _attr_icon = "mdi:speaker-multiple"
 
@@ -51,20 +61,25 @@ class VeoRoomEntity(CoordinatorEntity, MediaPlayerEntity):
         self._attr_unique_id = f"{entry.entry_id}_room_{room_id}"
         self._attr_supported_features = FEATURES
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_room_{room_id}")},  # separate device per room
+            identifiers={(DOMAIN, f"{entry.entry_id}_room_{room_id}")},
             name=f"Veoovibes – {name}",
             manufacturer="inveoo",
             configuration_url=entry.data.get("base_url"),
         )
 
+    # ----- helpers -----
     def _st(self) -> dict:
         return self.coordinator.data[KEY_STATE].get(self._room_id, {}) or {}
 
+    # ----- state mapping -----
     @property
     def state(self):
         st = self._st()
         playing = bool(st.get("is_playing", 0)) or str(st.get("status_code", "")).lower() == "playing"
-        return MediaPlayerState.PLAYING if playing else MediaPlayerState.PAUSED
+        if playing:
+            return MediaPlayerState.PLAYING
+        # Wunsch: bei "nicht spielend" als AUS anzeigen
+        return MediaPlayerState.OFF
 
     @property
     def volume_level(self):
@@ -94,8 +109,14 @@ class VeoRoomEntity(CoordinatorEntity, MediaPlayerEntity):
     def media_image_url(self):
         return self._st().get("cover")
 
+    # ----- core media controls -----
     async def async_media_play(self):
         await self._client.play_room(self._room_id)
+        await self.coordinator.async_request_refresh()
+
+    async def async_media_pause(self):
+        """Treat pause as stop (für klare Play/Off UX)."""
+        await self._client.stop_room(self._room_id)
         await self.coordinator.async_request_refresh()
 
     async def async_media_stop(self):
@@ -114,3 +135,22 @@ class VeoRoomEntity(CoordinatorEntity, MediaPlayerEntity):
         vol_0_100 = int(max(0.0, min(1.0, volume)) * 100.0)
         await self._client.set_room_volume(self._room_id, vol_0_100)
         await self.coordinator.async_request_refresh()
+
+    # ----- Power toggle for tiles (Play ↔ Off), robust gegen API-Fehler -----
+    async def async_turn_on(self):
+        """Map 'turn_on' to Play; Fehler werden geloggt, nicht geworfen."""
+        try:
+            await self._client.play_room(self._room_id)
+        except VeoovibesApiError as exc:
+            _LOGGER.debug("turn_on failed for room %s: %s", self._room_id, exc)
+        finally:
+            await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self):
+        """Map 'turn_off' to Stop."""
+        try:
+            await self._client.stop_room(self._room_id)
+        except VeoovibesApiError as exc:
+            _LOGGER.debug("turn_off failed for room %s: %s", self._room_id, exc)
+        finally:
+            await self.coordinator.async_request_refresh()
